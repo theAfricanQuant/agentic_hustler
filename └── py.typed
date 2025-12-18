@@ -1,0 +1,16 @@
+
+- **`pyproject.toml`**: The single source of truth for project metadata and dependencies.
+  - Dependencies: `pydantic>=2.0`, `openai>=1.0`.
+- **`src/agentic_hustler/__init__.py`**: Public API entrypoint.
+  - Exports: `Hustle`, `Task`, `DockingStation`, `UniversalLLM`, `no_gree`.
+- **`src/agentic_hustler/core.py`**: Contains the implementation of `Task`, `DockingStation`, `Hustle`, and the `@no_gree` decorator.
+- **`src/agentic_hustler/llm.py`**: Contains the `UniversalLLM` adapter.
+- **`src/agentic_hustler/py.typed`**: A marker file indicating that the package is typed.
+
+## 5. Development & Style Guide
+
+- **Python Version:** Python 3.10+ is required for modern type hinting syntax (e.g., `list[str]`, `|` union).
+- **Typing:** Strict, explicit type hinting is mandatory for all public APIs and internal logic.
+- **Logging:** Use the standard `logging` module for all output. Do not use `print()`. A consistent log format should be used.
+- **Package Management:** `uv` is the required tool for managing dependencies and virtual environments.
+- **Resilience Decorator:** The `@no_gree` decorator must be implemented in `core.py` and handle retries with exponential backoff for any decorated async function.

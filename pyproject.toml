@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentic_hustler"
+version = "0.1.0"
+authors = [
+  { name="Agentic Hustler", email="hustle@agentic.com" },
+]
+description = "A minimalist, resilient, async-first workflow engine for AI agents."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "openai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "toml",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/agentic-hustler"
+Issues = "https://github.com/your-org/agentic-hustler/issues"

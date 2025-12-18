@@ -1,0 +1,11 @@
+
+## Quick Start
+
+`agentic_hustler` is built around three core components: `Task`, `Hustle`, and `DockingStation`.
+
+*   **`Task`**: A self-contained unit of async work.
+*   **`Hustle`**: A sequence of tasks that forms a workflow.
+*   **`DockingStation`**: An immutable container for the state passed between tasks.
+
+Here's a simple example of a workflow that generates a story and then summarizes it.
+
