@@ -22,7 +22,7 @@ You are an expert using the `agentic_hustler` framework. Follow these rules stri
 ## 3. LLM Usage
 * **Adapter:** Always use `agentic_hustler.llm.UniversalLLM`.
 * **Model Selection:**
-    * Load the model ID from `os.getenv("AGENT_MODEL")`.
+    * Load the model ID from `os.getenv("DEFAULT_MODEL")`.
     * Do NOT hardcode model strings unless strictly necessary.
     * For OpenRouter, use the clean ID (e.g., `z-ai/glm-4.6`), NOT the `openrouter/` prefix.
 
@@ -34,7 +34,8 @@ class MyTask(Task[GlobalState, LocalPayload]):
     @no_gree(retries=2)
     async def run_am(self, payload: LocalPayload):
         llm = UniversalLLM()
-        return await llm.chat(..., model=os.getenv("AGENT_MODEL"))
+        # Note: Uses DEFAULT_MODEL
+        return await llm.chat(..., model=os.getenv("DEFAULT_MODEL"))
 
     def deliver_am(self, station, payload, result):
         station.capital.log.append(result)
