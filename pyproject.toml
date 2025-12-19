@@ -19,6 +19,7 @@ classifiers = [
 dependencies = [
     "pydantic>=2.0",
     "openai>=1.0",
+    "python-dotenv>=1.2.1",
 ]
 
 [project.optional-dependencies]
@@ -27,5 +28,5 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/agentic-hustler"
-Issues = "https://github.com/your-org/agentic-hustler/issues"
+Homepage = "https://github.com/theAfricanQuant/agentic_hustler"
+Issues = "https://github.com/theAfricanQuant/agentic_hustler/issues"

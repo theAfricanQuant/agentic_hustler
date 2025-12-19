@@ -1,53 +1,44 @@
 import os
-from typing import Any
-
 from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletion
-
+from typing import List, Dict
 
 class UniversalLLM:
-    """
-    A standardized, async adapter for interacting with various Large Language Model providers.
-    Defaults to OpenRouter.
-    """
-
-    def __init__(
-        self,
-        api_key: str | None = None,
-        base_url: str = "https://openrouter.ai/api/v1",
-        **kwargs: Any,
-    ):
-        """
-        Initializes the UniversalLLM adapter.
-
-        Args:
-            api_key: The API key for the LLM provider. If None, it will be
-                     looked up from the OPENROUTER_API_KEY environment variable.
-            base_url: The base URL for the LLM provider's API.
-            **kwargs: Additional arguments to pass to the AsyncOpenAI client.
-        """
-        if api_key is None:
-            api_key = os.environ.get("OPENROUTER_API_KEY")
-            if api_key is None:
-                raise ValueError(
-                    "OpenRouter API key not found. Please set the OPENROUTER_API_KEY "
-                    "environment variable or pass it to the constructor."
-                )
+    def __init__(self, provider="openrouter"):
+        self.provider = provider
+        self.api_key = self._get_key(provider)
+        self.base_url = self._get_url(provider)
         
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, **kwargs)
+        self.headers = None
+        if provider == "openrouter":
+            self.headers = {
+                "HTTP-Referer": "https://localhost",
+                "X-Title": "AgenticHustler",
+            }
 
-    async def acreate(self, messages: list[dict], **kwargs: Any) -> ChatCompletion:
-        """
-        Creates a chat completion using the configured LLM provider.
-
-        Args:
-            messages: A list of message dictionaries for the chat completion.
-            **kwargs: Additional arguments to pass to the chat.completions.create method.
-
-        Returns:
-            A ChatCompletion object.
-        """
-        return await self.client.chat.completions.create(
-            messages=messages,
-            **kwargs,
+        self.client = AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            default_headers=self.headers
         )
+
+    def _get_url(self, provider):
+        if provider == "openrouter": return "https://openrouter.ai/api/v1"
+        if provider == "openai": return "https://api.openai.com/v1"
+        if provider == "ollama": return "http://localhost:11434/v1"
+        return os.getenv("CUSTOM_LLM_URL")
+
+    def _get_key(self, provider):
+        if provider == "ollama": return "ollama"
+        if provider == "openrouter": return os.getenv("OPENROUTER_API_KEY")
+        return os.getenv(f"{provider.upper()}_API_KEY")
+
+    async def chat(self, messages: List[Dict], model: str, temperature=0.7):
+        try:
+            response = await self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            raise e

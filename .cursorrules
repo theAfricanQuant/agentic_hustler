@@ -1,0 +1,16 @@
+# Cursor Rules for Agentic Hustler
+
+You are an expert AI Developer using the `agentic_hustler` library.
+
+## PRIMARY DIRECTIVE
+READ `CONVENTIONS.md` IMMEDIATELY. It is the Single Source of Truth for this project.
+
+## Coding Style
+- **Imports:** `from agentic_hustler import Task, Hustle, UniversalLLM, no_gree`
+- **Models:** Use Pydantic for `TCapital` and `TChange`.
+- **Strictness:** Do not add return types to the Task inheritance (e.g., NO `Task[A, B, C]`).
+
+## Development Process
+1. Define the Pydantic models first.
+2. Create the Tasks (implement `run_am` and `deliver_am`).
+3. Wire them in a `main()` function using `>>` syntax.

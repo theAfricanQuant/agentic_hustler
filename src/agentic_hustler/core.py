@@ -1,153 +1,125 @@
-import asyncio
 import copy
+import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Generic, TypeVar
+import random
+from typing import TypeVar, Generic, Dict, List, Optional, NamedTuple, Any, Type
+from functools import wraps
+from pydantic import BaseModel, ValidationError
 
-from pydantic import ValidationError
+# --- Telemetry ---
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger("AgenticHustler")
 
-# Configure basic logging for the library
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+def log_gist(event, **kwargs):
+    msg = f"[{event}] " + " ".join([f"{k}={v}" for k, v in kwargs.items()])
+    logger.info(msg)
 
-# Generic type variables for the core components
-TCapital = TypeVar("TCapital")
-TChange = TypeVar("TChange")
-TOutput = TypeVar("TOutput")
-TFunc = TypeVar("TFunc", bound=Callable[..., Awaitable[Any]])
-
-
-def no_gree(max_retries: int = 3, initial_delay: float = 1.0) -> Callable[[TFunc], TFunc]:
-    """
-    A decorator to add resilience to async functions with retries and exponential backoff.
-
-    Args:
-        max_retries: The maximum number of retry attempts.
-        initial_delay: The initial delay in seconds before the first retry.
-
-    Returns:
-        The decorated async function.
-    """
-    def decorator(func: TFunc) -> TFunc:
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            last_exception = None
-            for attempt in range(max_retries + 1):
+# --- Resilience ---
+def no_gree(retries=3, base_delay=1.0):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            for attempt in range(retries):
                 try:
-                    return await func(*args, **kwargs)
+                    return await func(self, *args, **kwargs)
                 except Exception as e:
-                    last_exception = e
-                    if attempt == max_retries:
-                        logger.error(
-                            f"Function '{func.__name__}' failed after {max_retries} retries. "
-                            f"Final exception: {e}"
-                        )
-                        raise
-                    else:
-                        delay = initial_delay * (2**attempt)
-                        logger.warning(
-                            f"Function '{func.__name__}' failed (attempt {attempt + 1}/{max_retries + 1}). "
-                            f"Retrying in {delay:.2f} seconds... Error: {e}"
-                        )
-                        await asyncio.sleep(delay)
-            # This part should theoretically not be reached due to the raise in the loop
-            raise last_exception
-
-        return wrapper  # type: ignore
+                    if attempt == retries - 1:
+                        log_gist("WAHALA", task=self.__class__.__name__, error=str(e))
+                        raise e
+                    wait = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                    log_gist("RETRY", task=self.__class__.__name__, attempt=attempt+1, wait=f"{wait:.2f}s")
+                    await asyncio.sleep(wait)
+        return wrapper
     return decorator
 
+# --- Types ---
+TCapital = TypeVar("TCapital") 
+TChange = TypeVar("TChange")   
 
 class DockingStation(Generic[TCapital, TChange]):
-    """
-    A memory-efficient, immutable container for state passed between tasks.
-    """
-    __slots__ = ('capital', 'change')
+    __slots__ = ['capital', 'change', 'tag']
 
-    def __init__(self, capital: TCapital, change: TChange):
+    def __init__(self, capital: TCapital, change: TChange, tag: str = "Root"):
         self.capital = capital
         self.change = change
+        self.tag = tag
 
-    def undock(self) -> "DockingStation[TCapital, TChange]":
-        """
-        Creates a deep copy of the DockingStation for parallel execution.
-        The 'capital' is shallow-copied (shared reference), while 'change' is deep-copied.
-        """
+    def undock(self, new_change_data: Optional[Dict] = None) -> 'DockingStation[TCapital, TChange]':
         new_change = copy.deepcopy(self.change)
-        return DockingStation(capital=self.capital, change=new_change)
+        if isinstance(new_change, dict) and new_change_data:
+            new_change.update(new_change_data) # type: ignore
+        elif isinstance(new_change, BaseModel) and new_change_data:
+            new_change = new_change.model_copy(update=new_change_data)
+        new_tag = f"{self.tag}.{random.randint(100,999)}"
+        return DockingStation(self.capital, new_change, tag=new_tag)
 
+class NextMove(NamedTuple):
+    route: str
+    payload: Optional[Dict[str, Any]] = None
 
-class Task(Generic[TCapital, TChange, TOutput]):
-    """
-    The fundamental unit of work, a self-contained, reusable piece of logic.
-    """
-    async def check_am(self, station: DockingStation[TCapital, TChange]) -> None:
-        """
-        Validates the input state. Must be implemented by subclasses.
-        Raises pydantic.ValidationError on failure.
-        """
-        raise NotImplementedError
+# --- The Task (Strictly 2 Generics) ---
+class Task(Generic[TCapital, TChange]):
+    Requirements: Optional[Type[BaseModel]] = None
 
-    @no_gree()
-    async def run_am(self, specs: TChange) -> TOutput:
-        """
-        The core async execution logic. Must be implemented by subclasses.
-        """
-        raise NotImplementedError
+    def __init__(self):
+        self._connections: Dict[str, 'Task'] = {}
+        self._moves: List[NextMove] = []
 
-    async def deliver_am(
-        self,
-        station: DockingStation[TCapital, TChange],
-        specs: TChange,
-        output: TOutput,
-    ) -> DockingStation[TCapital, TChange]:
-        """
-        Post-processes the result and updates the DockingStation.
-        Must be implemented by subclasses.
-        """
-        raise NotImplementedError
+    def check_am(self, station: DockingStation[TCapital, TChange]) -> Any:
+        if self.Requirements and isinstance(station.change, dict):
+            try:
+                return self.Requirements(**station.change)
+            except ValidationError as e:
+                log_gist("BAD_PAYLOAD", tag=station.tag, error=str(e))
+                raise e
+        return station.change
 
-    def __rshift__(self, other: "Task[Any, Any, Any]") -> "Hustle[Any, Any]":
-        """
-        Chains this task with another to create a Hustle (workflow).
-        """
-        if not isinstance(other, Task):
-            raise TypeError("Can only chain a Task with another Task.")
-        return Hustle(tasks=[self, other])
+    @no_gree(retries=3)
+    async def run_am(self, specs: Any) -> Any:
+        return specs
 
+    def deliver_am(self, station: DockingStation[TCapital, TChange], specs: Any, output: Any) -> None:
+        pass
+
+    def next_task(self, route_name="forward", payload=None):
+        self._moves.append(NextMove(route_name, payload))
+
+    def link(self, route_name, next_task_instance):
+        self._connections[route_name] = next_task_instance
+        return next_task_instance
+
+    def __rshift__(self, other_task):
+        return self.link("forward", other_task)
+
+    async def _execute(self, station: DockingStation[TCapital, TChange]) -> List[NextMove]:
+        self._moves = []
+        specs = self.check_am(station)
+        log_gist("START_OP", task=self.__class__.__name__, tag=station.tag)
+        output = await self.run_am(specs)
+        self.deliver_am(station, specs, output)
+        log_gist("OP_COMPLETE", task=self.__class__.__name__, tag=station.tag)
+        if not self._moves:
+            return [NextMove("forward", None)]
+        return self._moves
 
 class Hustle(Generic[TCapital, TChange]):
-    """
-    The orchestrator that manages the execution of a sequence of tasks.
-    """
-    def __init__(self, tasks: list[Task[TCapital, Any, Any]]):
-        if not tasks:
-            raise ValueError("A Hustle cannot be created with an empty list of tasks.")
-        self.tasks = tasks
+    def __init__(self, start_task: Task[TCapital, TChange]):
+        # 🔴 WAS: self.start = start_task  (This caused the bug)
+        # 🟢 CHANGE TO:
+        self.entry_task = start_task
 
-    def __rshift__(self, other: Task[TCapital, Any, Any]) -> "Hustle[TCapital, Any]":
-        """
-        Appends another task to the end of this Hustle.
-        """
-        if not isinstance(other, Task):
-            raise TypeError("Can only chain a Hustle with a Task.")
-        return Hustle(tasks=self.tasks + [other])
-
-    async def run(
-        self, initial_station: DockingStation[TCapital, TChange]
-    ) -> DockingStation[TCapital, Any]:
-        """
-        Executes the sequence of tasks.
-        """
-        current_station = initial_station
-        for i, task in enumerate(self.tasks):
-            logger.info(f"Running task {i+1}/{len(self.tasks)}: {task.__class__.__name__}")
-            
-            # 1. Check/Validate input
-            await task.check_am(current_station)
-            
-            # 2. Run the core logic
-            specs = current_station.change
-            output = await task.run_am(specs)
-            
-            # 3. Deliver and update state
-            current_station = await task.deliver_am(current_station, specs, output)
-            
-        return current_station
+    async def start(self, initial_capital: TCapital, initial_change: TChange):
+        first_station = DockingStation(initial_capital, initial_change)
+        
+        # 🔴 WAS: queue = [(self.start, first_station)]
+        # 🟢 CHANGE TO:
+        queue = [(self.entry_task, first_station)]
+        
+        while queue:
+            current_task, current_station = queue.pop(0)
+            moves = await current_task._execute(current_station)
+            for m in moves:
+                if m.route in current_task._connections:
+                    next_task_instance = current_task._connections[m.route]
+                    new_station = current_station.undock(m.payload)
+                    queue.append((next_task_instance, new_station))
